@@ -231,13 +231,14 @@ func (b *Broker) Remove(s Subscriber) {
 	}
 }
 
-// MatchTopics is only exported for tests :(
+// MatchTopics returns the subset of "topics" that matches "topic".
+// assumes that "topic" does not contain wildcards
 func MatchTopics(topic string, topics []string) []string {
 	matches := []string{}
 	topicParts := strings.Split(topic, "/")
 
 	for _, t := range topics {
-		if topicsMatch(topicParts, strings.Split(t, "/")) {
+		if TopicsMatch(topicParts, strings.Split(t, "/")) {
 			matches = append(matches, t)
 		}
 	}
@@ -266,10 +267,11 @@ func (b *Broker) get(topic string) []Subscriber {
 const singleLevelWildcard = "+"
 const multiLevelWildcard = "#"
 
+// TopicsMatch returns true if t1 matches t2 as specified in MQTT
 // parameters are the topics split on "/"
 // assumes that the topic in the first parameter does not contain wildcards
 // returns false for invalid topics (multi-level wildcards somewhere other than at the end)
-func topicsMatch(t1, t2 []string) bool {
+func TopicsMatch(t1, t2 []string) bool {
 	l1 := len(t1)
 	l2 := len(t2)
 

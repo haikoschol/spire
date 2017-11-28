@@ -1,9 +1,11 @@
 package ping_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/eclipse/paho.mqtt.golang/packets"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/superscale/spire/devices"
@@ -191,6 +193,58 @@ var _ = Describe("Ping Message Handler", func() {
 				Ω(ps.Tunnel.Ping.LossNow).Should(BeNumerically(">", 0.32))
 				Ω(ps.Tunnel.Ping.LossNow).Should(BeNumerically("<", 0.34))
 			})
+		})
+	})
+	Describe("sends current ping state on subscribe", func() {
+		var formationID = "00000000-0000-0000-0000-000000000001"
+		var brokerSession, subscriberSession *mqtt.Session
+		var m *ping.Message
+
+		BeforeEach(func() {
+			formations.Lock()
+			stateMsg := &ping.Message{
+				Gateway: struct {
+					Ping ping.Stats `json:"ping"`
+				}{
+					Ping: ping.Stats{
+						Sent:     42,
+						Received: 23,
+					},
+				},
+			}
+			formations.PutDeviceState(formationID, deviceName, ping.Key, stateMsg)
+			formations.Unlock()
+
+			brokerSession, subscriberSession = testutils.Pipe()
+
+			subPkg := packets.NewControlPacket(packets.Subscribe).(*packets.SubscribePacket)
+			subPkg.Topics = []string{"matriarch/1.marsara/#"}
+			subPkg.MessageID = 1337
+
+			go broker.HandleSubscribePacket(subPkg, brokerSession, true)
+
+			// read suback packet
+			_, err := subscriberSession.Read()
+			Expect(err).NotTo(HaveOccurred())
+
+			p, err := subscriberSession.Read()
+			Expect(err).NotTo(HaveOccurred())
+
+			pubPkg, ok := p.(*packets.PublishPacket)
+			Expect(ok).To(BeTrue())
+			Expect(pubPkg.TopicName).To(Equal(uiTopic))
+
+			m = new(ping.Message)
+			err = json.Unmarshal(pubPkg.Payload, m)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		AfterEach(func() {
+			brokerSession.Close()
+			subscriberSession.Close()
+		})
+		It("publishes a \"ping\" message for the device", func() {
+			Expect(m.Gateway.Ping.Sent).To(Equal(int64(42)))
+			Expect(m.Gateway.Ping.Received).To(Equal(int64(23)))
 		})
 	})
 })

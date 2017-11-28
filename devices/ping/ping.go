@@ -3,6 +3,7 @@ package ping
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/superscale/spire/devices"
@@ -51,11 +52,16 @@ func Register(broker *mqtt.Broker, formations *devices.FormationMap) interface{}
 	h := &Handler{broker, formations}
 
 	broker.Subscribe("pylon/+/wan/ping", h)
+	broker.Subscribe(mqtt.SubscribeEventTopic, h)
 	return h
 }
 
 // HandleMessage ...
 func (h *Handler) HandleMessage(topic string, payload interface{}) error {
+	if topic == mqtt.SubscribeEventTopic {
+		return h.onSubscribeEvent(payload.(mqtt.SubscribeMessage))
+	}
+
 	h.formations.Lock()
 	defer h.formations.Unlock()
 
@@ -79,7 +85,23 @@ func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 	newState := updatePingState(currentState, msg)
 	formationID := h.formations.FormationID(deviceName)
 	h.formations.PutDeviceState(formationID, deviceName, Key, newState)
-	h.broker.Publish(fmt.Sprintf("matriarch/%s/wan/ping", deviceName), newState)
+	h.broker.Publish(uiTopic(deviceName), newState)
+	return nil
+}
+
+var topicPathParts = []string{"wan", "ping"}
+
+func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
+
+	for _, topic := range sm.Topics {
+		t := devices.ParseTopic(topic)
+
+		if t.DeviceName != "+" && mqtt.TopicsMatch(topicPathParts, strings.Split(t.Path, "/")) {
+			if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*Message); ok {
+				h.broker.Publish(uiTopic(t.DeviceName), state)
+			}
+		}
+	}
 	return nil
 }
 
@@ -154,4 +176,8 @@ func (m *Message) UnmarshalJSON(data []byte) error {
 	}
 	m.Timestamp = time.Unix(tmp.Timestamp, 0)
 	return nil
+}
+
+func uiTopic(deviceName string) string {
+	return fmt.Sprintf("matriarch/%s/wan/ping", deviceName)
 }
