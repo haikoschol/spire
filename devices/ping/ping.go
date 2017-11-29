@@ -89,17 +89,15 @@ func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 	return nil
 }
 
-var topicPathParts = []string{"wan", "ping"}
+func subscribeFilter(path string) bool {
+	return path == "#" || mqtt.TopicsMatch([]string{"wan", "ping"}, strings.Split(path, "/"))
+}
 
 func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
-	for _, topic := range sm.Topics {
-		t := devices.ParseTopic(topic)
-
-		if t.DeviceName != "+" && mqtt.TopicsMatch(topicPathParts, strings.Split(t.Path, "/")) {
-			if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*Message); ok {
-				h.broker.Publish(uiTopic(t.DeviceName), state)
-			}
+	for _, t := range devices.FilterSubscribeTopics(sm, subscribeFilter) {
+		if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*Message); ok {
+			h.broker.Publish(uiTopic(t.DeviceName), state)
 		}
 	}
 	return nil

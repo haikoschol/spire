@@ -142,15 +142,15 @@ func (h *Handler) onDisconnect(dm devices.DisconnectMessage) error {
 	return nil
 }
 
+func subscribeFilter(path string) bool {
+	return path == "#" || path == stateTopicPath
+}
+
 func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
-	for _, topic := range sm.Topics {
-		t := devices.ParseTopic(topic)
-
-		if t.DeviceName != "+" && (t.Path == stateTopicPath || t.Path == "#") {
-			state, _ := h.formations.GetDeviceState(t.DeviceName, formationCacheKey).(*Message)
-			h.sendToUI(t.DeviceName, state)
-		}
+	for _, t := range devices.FilterSubscribeTopics(sm, subscribeFilter) {
+		state, _ := h.formations.GetDeviceState(t.DeviceName, formationCacheKey).(*Message)
+		h.sendToUI(t.DeviceName, state)
 	}
 	return nil
 }

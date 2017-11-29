@@ -84,6 +84,25 @@ func ParseTopic(topic string) Topic {
 	return Topic{parts[0], parts[1], parts[2]}
 }
 
+// FilterSubscribeTopics filters all topics in a SubscribeEventMessage
+// through a predicate and returns the matches as a slice of Topic objects.
+// The predicate receives the "path" component of the topic as argument.
+// Topics with a prefix other than "matriarch" as well as those with
+// wildcards in the device name part will be skipped.
+func FilterSubscribeTopics(sm mqtt.SubscribeMessage, matches func(string) bool) []Topic {
+	matchingTopics := []Topic{}
+
+	for _, topic := range sm.Topics {
+		t := ParseTopic(topic)
+
+		if t.Prefix == "matriarch" && t.DeviceName != "+" && matches(t.Path) {
+			matchingTopics = append(matchingTopics, t)
+		}
+	}
+
+	return matchingTopics
+}
+
 // HandleConnection ...
 func (h *Handler) HandleConnection(session *mqtt.Session) {
 

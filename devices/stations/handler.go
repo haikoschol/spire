@@ -146,15 +146,15 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 	}
 }
 
+func subscribeFilter(path string) bool {
+	return path == "#" || path == "stations"
+}
+
 func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
-	for _, topic := range sm.Topics {
-		t := devices.ParseTopic(topic)
-
-		if t.DeviceName != "+" && (t.Path == "stations" || t.Path == "#") {
-			if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*State); ok {
-				h.publish(t.DeviceName, state)
-			}
+	for _, t := range devices.FilterSubscribeTopics(sm, subscribeFilter) {
+		if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*State); ok {
+			h.publish(t.DeviceName, state)
 		}
 	}
 	return nil

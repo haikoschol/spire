@@ -64,20 +64,20 @@ func (h *Handler) onDisconnect(dm devices.DisconnectMessage) error {
 	return nil
 }
 
+func subscribeFilter(path string) bool {
+	return path == "up" || path == "#"
+}
+
 func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
-	for _, topic := range sm.Topics {
-		t := devices.ParseTopic(topic)
-
-		if t.DeviceName != "+" && (t.Path == "up" || t.Path == "#") {
-
-			if h.formations.GetDeviceState(t.DeviceName, "cancelUpFn") != nil {
-				h.publishUpMsg(t.DeviceName, upState)
-			} else {
-				h.publishUpMsg(t.DeviceName, downState)
-			}
+	for _, t := range devices.FilterSubscribeTopics(sm, subscribeFilter) {
+		if h.formations.GetDeviceState(t.DeviceName, "cancelUpFn") != nil {
+			h.publishUpMsg(t.DeviceName, upState)
+		} else {
+			h.publishUpMsg(t.DeviceName, downState)
 		}
 	}
+
 	return nil
 }
 

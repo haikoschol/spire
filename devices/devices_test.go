@@ -2,6 +2,7 @@ package devices_test
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
 	. "github.com/onsi/ginkgo"
@@ -196,6 +197,67 @@ var _ = Describe("Device Message Handlers", func() {
 					Expect(result.DeviceName).To(BeEmpty())
 					Expect(result.Path).To(Equal(path))
 				})
+			})
+		})
+	})
+	Describe("FilterSubscribeTopics", func() {
+		var sm mqtt.SubscribeMessage
+		var filteredTopics []devices.Topic
+		var predicate func(string) bool
+
+		BeforeEach(func() {
+			sm = mqtt.SubscribeMessage{
+				Topics: []string{
+					"/matriarch/1.marsara/#",
+					"matriarch/1.marsara/ota/state",
+				},
+			}
+
+			predicate = func(string) bool { return true }
+		})
+		JustBeforeEach(func() {
+			filteredTopics = devices.FilterSubscribeTopics(sm, predicate)
+		})
+		Context("all topics match", func() {
+			It("includes all topics from the SubscribeEventMessage", func() {
+				Expect(len(filteredTopics)).To(Equal(len(sm.Topics)))
+			})
+		})
+		Context("topic with wildcard in device part", func() {
+			BeforeEach(func() {
+
+				sm = mqtt.SubscribeMessage{
+					Topics: []string{
+						"/matriarch/1.marsara/#",
+						"matriarch/+/ota/state",
+					},
+				}
+			})
+			It("does not include the topic with wildcard", func() {
+				Expect(len(filteredTopics)).To(Equal(1))
+			})
+		})
+		Context("topic with a prefix other than \"matriarch\"", func() {
+			BeforeEach(func() {
+
+				sm = mqtt.SubscribeMessage{
+					Topics: []string{
+						"/matriarch/1.marsara/#",
+						"pylon/1.marsara/ota/state",
+					},
+				}
+			})
+			It("does not include the topic with prefix \"pylon\"", func() {
+				Expect(len(filteredTopics)).To(Equal(1))
+			})
+		})
+		Context("filter for \"ota\" in predicate", func() {
+			BeforeEach(func() {
+				predicate = func(path string) bool { return strings.HasPrefix(path, "ota") }
+			})
+			It("only includes the \"ota\" topic", func() {
+				Expect(len(filteredTopics)).To(Equal(1))
+				Expect(filteredTopics[0].String()).To(Equal("matriarch/1.marsara/ota/state"))
 			})
 		})
 	})
