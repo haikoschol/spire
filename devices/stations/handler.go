@@ -85,16 +85,24 @@ func Register(broker *mqtt.Broker, formations *devices.FormationMap) interface{}
 	broker.Subscribe("pylon/+/net", h)
 	broker.Subscribe("pylon/+/sys/facts", h)
 	broker.Subscribe("pylon/+/odhcpd", h)
+	broker.Subscribe(mqtt.SubscribeEventTopic, h)
 
 	return h
 }
 
 // HandleMessage ...
 func (h *Handler) HandleMessage(topic string, message interface{}) error {
-	h.formations.Lock()
-	defer h.formations.Unlock()
+
+	if topic == mqtt.SubscribeEventTopic {
+		h.formations.RLock()
+		defer h.formations.RUnlock()
+		return h.onSubscribeEvent(message.(mqtt.SubscribeMessage))
+	}
 
 	t := devices.ParseTopic(topic)
+
+	h.formations.Lock()
+	defer h.formations.Unlock()
 
 	switch t.Path {
 	case "wifi/poll":
@@ -136,6 +144,20 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 	default:
 		return nil
 	}
+}
+
+func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
+
+	for _, topic := range sm.Topics {
+		t := devices.ParseTopic(topic)
+
+		if t.DeviceName != "+" && (t.Path == "stations" || t.Path == "#") {
+			if state, ok := h.formations.GetDeviceState(t.DeviceName, Key).(*State); ok {
+				h.publish(t.DeviceName, state)
+			}
+		}
+	}
+	return nil
 }
 
 func (h *Handler) onWifiPollMessage(t devices.Topic, msg *WifiPollMessage) error {

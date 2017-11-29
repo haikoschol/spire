@@ -1,8 +1,10 @@
 package stations_test
 
 import (
+	"encoding/json"
 	"time"
 
+	"github.com/eclipse/paho.mqtt.golang/packets"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/superscale/spire/devices"
@@ -24,6 +26,7 @@ var _ = Describe("Stations Handler", func() {
 	var formationID = "00000000-0000-0000-0000-000000000001"
 
 	BeforeEach(func() {
+		payload = nil
 		broker = mqtt.NewBroker(false)
 		formations = devices.NewFormationMap()
 		recorder = testutils.NewPubSubRecorder()
@@ -33,7 +36,9 @@ var _ = Describe("Stations Handler", func() {
 		stations.Register(broker, formations)
 	})
 	JustBeforeEach(func() {
-		broker.Publish(topic, payload)
+		if payload != nil {
+			broker.Publish(topic, payload)
+		}
 
 		if _, m := recorder.First(); m != nil {
 			var ok bool
@@ -485,6 +490,52 @@ var _ = Describe("Stations Handler", func() {
 			Expect(c3.IP).To(Equal("192.168.1.102"))
 			Expect(c3.Hostname).To(Equal("client3"))
 			Expect(c3.TTL).To(Equal("2342"))
+		})
+	})
+	Describe("sends current stations state on subscribe", func() {
+		var brokerSession, subscriberSession *mqtt.Session
+		var message *stations.Message
+
+		BeforeEach(func() {
+			state := stations.NewState()
+
+			state.WifiStations["aa:aa:aa:aa:aa:aa"] = stations.WifiStation{
+				"ip":   "1.2.3.4",
+				"mode": "private",
+			}
+
+			formations.Lock()
+			formations.PutDeviceState(formationID, deviceName, stations.Key, state)
+			formations.Unlock()
+
+			brokerSession, subscriberSession = testutils.Pipe()
+
+			subPkg := packets.NewControlPacket(packets.Subscribe).(*packets.SubscribePacket)
+			subPkg.Topics = []string{"matriarch/1.marsara/#"}
+			subPkg.MessageID = 1337
+
+			go broker.HandleSubscribePacket(subPkg, brokerSession, true)
+
+			// read suback packet
+			_, err := subscriberSession.Read()
+			Expect(err).NotTo(HaveOccurred())
+
+			p, err := subscriberSession.Read()
+			Expect(err).NotTo(HaveOccurred())
+
+			pubPkg, ok := p.(*packets.PublishPacket)
+			Expect(ok).To(BeTrue())
+			message = new(stations.Message)
+			err = json.Unmarshal(pubPkg.Payload, message)
+			Expect(err).NotTo(HaveOccurred())
+		})
+		AfterEach(func() {
+			brokerSession.Close()
+			subscriberSession.Close()
+		})
+		It("publishes a stations message for the device", func() {
+			Expect(len(message.Private)).To(Equal(1))
+			Expect(message.Private[0]["ip"]).To(Equal("1.2.3.4"))
 		})
 	})
 })
