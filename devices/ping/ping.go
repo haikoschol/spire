@@ -58,7 +58,9 @@ func Register(broker *mqtt.Broker, formations *devices.FormationMap) interface{}
 
 // HandleMessage ...
 func (h *Handler) HandleMessage(topic string, payload interface{}) error {
-	if topic == mqtt.SubscribeEventTopic {
+	t := devices.ParseTopic(topic)
+
+	if t.String() == mqtt.SubscribeEventTopic {
 		return h.onSubscribeEvent(payload.(mqtt.SubscribeMessage))
 	}
 
@@ -75,17 +77,16 @@ func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 		return err
 	}
 
-	deviceName := devices.ParseTopic(topic).DeviceName
 	var currentState *Message
-	rawState := h.formations.GetDeviceState(deviceName, Key)
+	rawState := h.formations.GetDeviceState(t.DeviceName, Key)
 	if rawState != nil {
 		currentState = rawState.(*Message)
 	}
 
 	newState := updatePingState(currentState, msg)
-	formationID := h.formations.FormationID(deviceName)
-	h.formations.PutDeviceState(formationID, deviceName, Key, newState)
-	h.broker.Publish(uiTopic(deviceName), newState)
+	formationID := h.formations.FormationID(t.DeviceName)
+	h.formations.PutDeviceState(formationID, t.DeviceName, Key, newState)
+	h.broker.Publish(uiTopic(t.DeviceName), newState)
 	return nil
 }
 

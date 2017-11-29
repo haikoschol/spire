@@ -75,7 +75,7 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 		return nil
 	}
 
-	if topic == mqtt.SubscribeEventTopic {
+	if t.String() == mqtt.SubscribeEventTopic {
 		return h.onSubscribeEvent(message.(mqtt.SubscribeMessage))
 	}
 
