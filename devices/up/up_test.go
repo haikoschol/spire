@@ -2,6 +2,7 @@ package up_test
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
 	. "github.com/onsi/ginkgo"
@@ -44,17 +45,39 @@ var _ = Describe("Up Message Handler", func() {
 
 			Expect(topic).To(Equal(upTopic))
 
-			msg, ok := raw.(map[string]interface{})
+			msg, ok := raw.(up.Message)
 			Expect(ok).To(BeTrue())
-			Expect(msg["state"]).To(Equal("up"))
 
-			timestamp, ok := msg["timestamp"]
+			Expect(msg.State).To(Equal(up.Up))
+			Expect(msg.Timestamp).To(BeNumerically(">", 0))
+			Expect(msg.Timestamp).To(BeNumerically("<=", time.Now().UTC().Unix()))
+		})
+		It("stores the 'up' state of the device", func() {
+			formations.RLock()
+			defer formations.RUnlock()
+
+			msg, ok := formations.GetDeviceState(deviceName, up.Key).(up.Message)
 			Expect(ok).To(BeTrue())
-			_, ok = timestamp.(int64)
-			Expect(ok).To(BeTrue())
+
+			Expect(msg.State).To(Equal(up.Up))
+			Expect(msg.Timestamp).To(BeNumerically(">", 0))
+			Expect(msg.Timestamp).To(BeNumerically("<=", time.Now().UTC().Unix()))
 		})
 		Describe("disconnect", func() {
+			var connectedSince int64
+
 			BeforeEach(func() {
+				connectedSince = time.Now().Add(-time.Minute * 5).Unix()
+
+				msg := up.Message{
+					State:     up.Up,
+					Timestamp: connectedSince,
+				}
+
+				formations.Lock()
+				formations.PutDeviceState(formationID, deviceName, up.Key, msg)
+				formations.Unlock()
+
 				m := devices.DisconnectMessage{FormationID: formationID, DeviceName: deviceName}
 				broker.Publish(devices.DisconnectTopic.String(), m)
 			})
@@ -66,20 +89,29 @@ var _ = Describe("Up Message Handler", func() {
 				topic, raw := recorder.Last()
 				Expect(topic).To(Equal(upTopic))
 
-				msg, ok := raw.(map[string]interface{})
+				msg, ok := raw.(up.Message)
 				Expect(ok).To(BeTrue())
-				Expect(msg["state"]).To(Equal("down"))
 
-				timestamp, ok := msg["timestamp"]
+				Expect(msg.State).To(Equal(up.Down))
+				Expect(msg.Timestamp).To(BeNumerically("<=", time.Now().UTC().Unix()))
+				Expect(msg.Timestamp).To(BeNumerically(">", connectedSince))
+			})
+			It("updates the device state", func() {
+				formations.RLock()
+				defer formations.RUnlock()
+
+				msg, ok := formations.GetDeviceState(deviceName, up.Key).(up.Message)
 				Expect(ok).To(BeTrue())
-				_, ok = timestamp.(int64)
-				Expect(ok).To(BeTrue())
+
+				Expect(msg.State).To(Equal(up.Down))
+				Expect(msg.Timestamp).To(BeNumerically("<=", time.Now().UTC().Unix()))
+				Expect(msg.Timestamp).To(BeNumerically(">", connectedSince))
 			})
 		})
 	})
 	Describe("sends current state on subscribe", func() {
 		var brokerSession, subscriberSession *mqtt.Session
-		var payload map[string]interface{}
+		var message up.Message
 
 		JustBeforeEach(func() {
 			brokerSession, subscriberSession = testutils.Pipe()
@@ -99,8 +131,8 @@ var _ = Describe("Up Message Handler", func() {
 
 			pubPkg, ok := p.(*packets.PublishPacket)
 			Expect(ok).To(BeTrue())
-			payload = make(map[string]interface{})
-			err = json.Unmarshal(pubPkg.Payload, &payload)
+
+			err = json.Unmarshal(pubPkg.Payload, &message)
 			Expect(err).NotTo(HaveOccurred())
 		})
 		AfterEach(func() {
@@ -109,17 +141,29 @@ var _ = Describe("Up Message Handler", func() {
 		})
 		Context("with no device state in the cache", func() {
 			It("publishes an 'up' message for the device with state = \"down\"", func() {
-				Expect(payload["state"]).To(Equal("down"))
+				Expect(message.State).To(Equal(up.Down))
+				Expect(message.Timestamp).To(Equal(int64(0)))
 			})
 		})
 		Context("with device state in the cache", func() {
+			var connectedSince int64
+
 			BeforeEach(func() {
 				formations.Lock()
 				defer formations.Unlock()
-				formations.PutDeviceState(formationID, deviceName, "cancelUpFn", func() {})
+
+				connectedSince = time.Now().Add(-time.Minute * 5).UTC().Unix()
+
+				msg := up.Message{
+					State:     up.Up,
+					Timestamp: connectedSince,
+				}
+
+				formations.PutDeviceState(formationID, deviceName, up.Key, msg)
 			})
 			It("publishes an 'up' message for the device with state = \"up\"", func() {
-				Expect(payload["state"]).To(Equal("up"))
+				Expect(message.State).To(Equal(up.Up))
+				Expect(message.Timestamp).To(Equal(connectedSince))
 			})
 		})
 	})

@@ -1,13 +1,32 @@
 package up
 
 import (
-	"context"
 	"fmt"
 	"time"
 
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
 )
+
+type state string
+
+const (
+	// Key for the device state managed by this handler
+	Key = "up"
+
+	// Up ...
+	Up state = "up"
+
+	// Down ...
+	Down state = "down"
+)
+
+// Message represents both the device state stored in memory and the format of
+// the messages published to the UI.
+type Message struct {
+	State     state `json:"state"`
+	Timestamp int64 `json:"timestamp"`
+}
 
 // Handler ...
 type Handler struct {
@@ -44,23 +63,26 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 }
 
 func (h *Handler) onConnect(cm devices.ConnectMessage) error {
-	ctx, cancelFn := context.WithCancel(context.Background())
-	h.formations.PutDeviceState(cm.FormationID, cm.DeviceName, "cancelUpFn", cancelFn)
+	msg := Message{
+		State:     Up,
+		Timestamp: time.Now().UTC().Unix(),
+	}
 
-	go h.publishUpState(ctx, cm.DeviceName)
+	h.formations.PutDeviceState(cm.FormationID, cm.DeviceName, Key, msg)
+	h.sendToUI(cm.DeviceName, msg)
+
 	return nil
 }
 
 func (h *Handler) onDisconnect(dm devices.DisconnectMessage) error {
-	r := h.formations.GetDeviceState(dm.DeviceName, "cancelUpFn")
-	cancelFn, ok := r.(context.CancelFunc)
-	if !ok {
-		return fmt.Errorf("cannot cancel goroutine that publishes 'up' state for device %s", dm.DeviceName)
+	msg := Message{
+		State:     Down,
+		Timestamp: time.Now().UTC().Unix(),
 	}
 
-	cancelFn()
+	h.formations.PutDeviceState(dm.FormationID, dm.DeviceName, Key, msg)
+	h.sendToUI(dm.DeviceName, msg)
 
-	h.formations.DeleteDeviceState(dm.FormationID, dm.DeviceName, "cancelUpFn")
 	return nil
 }
 
@@ -71,40 +93,17 @@ func subscribeFilter(path string) bool {
 func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
 	for _, t := range devices.FilterSubscribeTopics(sm, subscribeFilter) {
-		if h.formations.GetDeviceState(t.DeviceName, "cancelUpFn") != nil {
-			h.publishUpMsg(t.DeviceName, upState)
+		if msg, ok := h.formations.GetDeviceState(t.DeviceName, Key).(Message); ok {
+			h.sendToUI(t.DeviceName, msg)
 		} else {
-			h.publishUpMsg(t.DeviceName, downState)
+			h.sendToUI(t.DeviceName, Message{State: Down})
 		}
 	}
 
 	return nil
 }
 
-func (h *Handler) publishUpState(ctx context.Context, deviceName string) {
-	h.publishUpMsg(deviceName, upState)
-
-	for {
-		select {
-		case <-ctx.Done():
-			h.publishUpMsg(deviceName, downState)
-			return
-		case <-time.After(30 * time.Second):
-			h.publishUpMsg(deviceName, upState)
-		}
-	}
-}
-
-const upState = "up"
-const downState = "down"
-
-func (h *Handler) publishUpMsg(deviceName, state string) {
+func (h *Handler) sendToUI(deviceName string, msg Message) {
 	topic := fmt.Sprintf("matriarch/%s/up", deviceName)
-
-	msg := map[string]interface{}{
-		"state":     state,
-		"timestamp": time.Now().UTC().Unix(),
-	}
-
 	h.broker.Publish(topic, msg)
 }
