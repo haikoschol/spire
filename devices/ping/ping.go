@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
 )
@@ -74,7 +75,7 @@ func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 
 	msg := new(Message)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	var currentState *Message

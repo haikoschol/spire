@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
 )
@@ -98,7 +99,7 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 func (h *Handler) onStateMessage(topic devices.Topic, buf []byte) error {
 	msg := new(Message)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	if msg.State != Downloading {
@@ -113,11 +114,11 @@ func (h *Handler) onStateMessage(topic devices.Topic, buf []byte) error {
 func (h *Handler) onUpgradeMessage(topic devices.Topic, buf []byte) error {
 	msg := make(map[string]interface{})
 	if err := json.Unmarshal(buf, &msg); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	if err := checkStrings(msg, "url", "sha256"); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	h.forwardAndUpdateState(topic, buf, Downloading)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/bugsnag/bugsnag-go"
 	"github.com/superscale/spire/config"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/devices/deviceInfo"
@@ -16,13 +15,6 @@ import (
 
 func main() {
 	config.Parse()
-
-	if len(config.Config.BugsnagKey) > 0 {
-		bugsnag.Configure(bugsnag.Configuration{
-			APIKey:       config.Config.BugsnagKey,
-			ReleaseStage: config.Config.Environment,
-		})
-	}
 
 	broker := mqtt.NewBroker(config.Config.SlashPrefixTopics)
 	formations := devices.NewFormationMap()

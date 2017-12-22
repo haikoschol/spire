@@ -35,27 +35,23 @@ func getDeviceOS(info map[string]interface{}) (res string) {
 
 	data, ok := info["data"].(map[string]interface{})
 	if ok {
-		sysimg, ok := data["current_system_image"].(map[string]interface{})
+		img, ok := data["current_system_image"].(map[string]interface{})
 		if ok {
-			vendor, ok := sysimg["vendor"].(string)
-			if !ok {
+			if !fieldsExist(img, "vendor", "product", "variant", "version") {
 				return
 			}
-			product, ok := sysimg["product"].(string)
-			if !ok {
-				return
-			}
-			variant, ok := sysimg["variant"].(string)
-			if !ok {
-				return
-			}
-			version, ok := sysimg["version"].(float64)
-			if !ok {
-				return
-			}
-			res = fmt.Sprintf("%s-%s-%s-%d", vendor, product, variant, int(version))
+			res = fmt.Sprintf("%s-%s-%s-%d", img["vendor"], img["product"], img["variant"], int(img["version"].(float64)))
 		}
 	}
 
 	return
+}
+
+func fieldsExist(m map[string]interface{}, fields... string) bool {
+	for _, f := range fields {
+		if _, exists := m[f]; !exists {
+			return false
+		}
+	}
+	return true
 }

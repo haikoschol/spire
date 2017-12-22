@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 
+	bugsnag "github.com/bugsnag/bugsnag-go"
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/eclipse/paho.mqtt.golang/packets"
 )
 
@@ -214,9 +216,12 @@ func (b *Broker) Publish(topic string, message interface{}) {
 	}
 
 	for _, s := range subs {
-		err := s.HandleMessage(topic, message)
-		if err != nil {
+		if err := s.HandleMessage(topic, message); err != nil {
 			log.Println(err)
+
+			if _, ok := err.(*bugsnagErrors.Error); ok {
+				notifyBugsnag(err, "spire:publish", bugsnag.MetaData{"Publish": {"Topic": topic}})
+			}
 		}
 	}
 }

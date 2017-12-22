@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/bugsnag/bugsnag-go"
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/config"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
@@ -32,7 +33,7 @@ func Register(broker *mqtt.Broker, formations *devices.FormationMap) interface{}
 // HandleMessage ...
 func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 	if len(config.Config.BugsnagKey) == 0 {
-		return errors.New("bugsnag API key not set")
+		return errors.New("[exception] bugsnag API key not set")
 	}
 
 	buf, ok := payload.([]byte)
@@ -42,23 +43,46 @@ func (h *Handler) HandleMessage(topic string, payload interface{}) error {
 
 	m := Message{Error: "unknown exception on device", Context: "unknown originating topic"}
 	if err := json.Unmarshal(buf, &m); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	t := devices.ParseTopic(topic)
-	metadata := bugsnag.MetaData{}
-	metadata.Add("device", "hostname", t.DeviceName)
 
+	ctx := bugsnag.Context{"pylon:" + m.Context}
+
+	metadata := bugsnag.MetaData{"device": {
+		"name":      t.DeviceName,
+		"osVersion": h.getDeviceOS(t.DeviceName),
+	}}
+
+	notifier := bugsnag.New(bugsnag.Configuration{
+		APIKey:       config.Config.BugsnagKey,
+		ReleaseStage: config.Config.Environment,
+	})
+
+	return notifier.Notify(errors.New(m.Error), bugsnag.SeverityError, ctx, metadata)
+}
+
+func (h *Handler) getDeviceOS(deviceName string) (deviceOS string) {
 	h.formations.RLock()
 	defer h.formations.RUnlock()
 
-	rawState := h.formations.GetDeviceState(t.DeviceName, "device_info")
+	deviceOS = "unknown"
+	rawState := h.formations.GetDeviceState(deviceName, "device_info")
 
-	if deviceInfo, ok := rawState.(map[string]interface{}); ok {
-		metadata.Add("device", "osVersion", deviceInfo["device_os"])
-	} else {
-		metadata.Add("device", "osVersion", "unknown")
+	deviceInfo, ok := rawState.(map[string]interface{})
+	if !ok {
+		return
 	}
 
-	return bugsnag.Notify(errors.New(m.Error), bugsnag.SeverityError, bugsnag.Context{String: m.Context}, metadata)
+	raw, exists := deviceInfo["device_os"]
+	if !exists {
+		return
+	}
+
+	if s, isStr := raw.(string); isStr {
+		return s
+	}
+
+	return
 }

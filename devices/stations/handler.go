@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
 )
@@ -162,11 +163,14 @@ func (h *Handler) onSubscribeEvent(sm mqtt.SubscribeMessage) error {
 
 func (h *Handler) onWifiPollMessage(t devices.Topic, msg *WifiPollMessage) error {
 	state, formationID := h.getState(t.DeviceName)
-	h.updateWifiStations(msg, state, t.DeviceName)
+
+	if err := h.updateWifiStations(msg, state, t.DeviceName); err != nil {
+		return err
+	}
 	h.formations.PutState(formationID, Key, state)
 
 	if surveyMsg, err := compileWifiSurveyMessage(msg); err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	} else if len(surveyMsg) > 0 {
 		surveyTopic := fmt.Sprintf("matriarch/%s/wifi/survey", t.DeviceName)
 		h.broker.Publish(surveyTopic, surveyMsg)
@@ -190,7 +194,7 @@ func (h *Handler) onWifiEventMessage(t devices.Topic, msg *WifiEventMessage) err
 	return nil
 }
 
-func (h *Handler) updateWifiStations(msg *WifiPollMessage, state *State, deviceName string) {
+func (h *Handler) updateWifiStations(msg *WifiPollMessage, state *State, deviceName string) error {
 
 	for ifaceName, iface := range msg.Interfaces {
 
@@ -200,8 +204,10 @@ func (h *Handler) updateWifiStations(msg *WifiPollMessage, state *State, deviceN
 			state.WifiStations = merge(state.WifiStations, stations)
 		} else {
 			log.Printf("[stations] error while parsing wifi station info for interface %s on device %s: %v", ifaceName, deviceName, err)
+			return bugsnagErrors.New(err, 1)
 		}
 	}
+	return nil
 }
 
 func (h *Handler) getState(deviceName string) (*State, string) {
@@ -218,7 +224,7 @@ func (h *Handler) onThingsMessage(t devices.Topic, msg map[string]interface{}) e
 	ip, ipOk := msg["address"].(string)
 	thingData, tOk := msg["thing"].(map[string]interface{})
 	if !ipOk || !tOk {
-		return fmt.Errorf("[stations] got invalid things discovery message: %v", msg)
+		return bugsnagErrors.New(fmt.Errorf("[stations] got invalid things discovery message: %v", msg), 1)
 	}
 
 	state, formationID := h.getState(t.DeviceName)
@@ -431,7 +437,7 @@ func (h *Handler) onSysMessage(t devices.Topic, msg *sysMessage) error {
 func (h *Handler) onDHCPMessage(t devices.Topic, msg []byte) error {
 	dhcpState, err := ParseDHCP(msg)
 	if err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	h.broker.Publish(fmt.Sprintf("matriarch/%s/dhcp/leases", t.DeviceName), dhcpState)
@@ -489,7 +495,7 @@ func unmarshalWifiPollMessage(payload interface{}) (*WifiPollMessage, error) {
 
 	msg := new(WifiPollMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 
 	return msg, nil
@@ -503,7 +509,7 @@ func unmarshalWifiEventMessage(payload interface{}) (*WifiEventMessage, error) {
 
 	msg := new(WifiEventMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 
 	return msg, nil
@@ -517,7 +523,7 @@ func unmarshalThingsMessage(payload interface{}) (map[string]interface{}, error)
 
 	var msg map[string]interface{}
 	if err := json.Unmarshal(buf, &msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 
 	return msg, nil
@@ -531,7 +537,7 @@ func unmarshalNetMessage(payload interface{}) (*netMessage, error) {
 
 	msg := new(netMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 
 	return msg, nil
@@ -545,7 +551,7 @@ func unmarshalSysMessage(payload interface{}) (*sysMessage, error) {
 
 	msg := new(sysMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 
 	return msg, nil

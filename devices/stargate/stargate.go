@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
 )
@@ -252,7 +253,7 @@ func (h *Handler) onSystemImageMessage(t devices.Topic, msg *SystemImageMessage)
 	} else {
 		imgState, exists := state.SystemImages[msg.ID]
 		if !exists {
-			return fmt.Errorf("missing system image state for image %s on device %s", msg.ID, t.DeviceName)
+			return bugsnagErrors.New(fmt.Errorf("missing system image state for image %s on device %s", msg.ID, t.DeviceName), 1)
 		}
 
 		switch msg.Download {
@@ -281,7 +282,7 @@ func unmarshalPortsMessage(message interface{}) (*PortsMessage, error) {
 
 	msg := new(PortsMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 	return msg, nil
 }
@@ -294,7 +295,7 @@ func unmarshalSystemImageMessage(message interface{}) (*SystemImageMessage, erro
 
 	msg := new(SystemImageMessage)
 	if err := json.Unmarshal(buf, msg); err != nil {
-		return nil, err
+		return nil, bugsnagErrors.New(err, 1)
 	}
 	return msg, nil
 }

@@ -109,7 +109,7 @@ func (h *Handler) HandleConnection(session *mqtt.Session) {
 	cm, err := h.connect(session)
 	if err != nil {
 		if err != io.EOF {
-			log.Println("failed to establish a session:", err)
+			log.Println("could not establish a session. closing connection.", err)
 			session.Close()
 		}
 		return
@@ -152,22 +152,10 @@ func (h *Handler) HandleConnection(session *mqtt.Session) {
 func (h *Handler) connect(session *mqtt.Session) (*ConnectMessage, error) {
 	pkg, err := session.ReadConnect()
 	if err != nil {
-		if err == io.EOF {
-			return nil, err
-		}
-		return nil, fmt.Errorf("error while reading packet: %v. closing connection", err)
-	}
-
-	cm := ConnectMessage{DeviceName: pkg.ClientIdentifier}
-	if err := json.Unmarshal([]byte(pkg.Username), &cm); err != nil {
 		return nil, err
 	}
 
-	if len(cm.FormationID) == 0 {
-		return nil, fmt.Errorf("CONNECT packet from %v is missing formation ID. closing connection", session.RemoteAddr())
-	}
-
-	cm.DeviceInfo, err = fetchDeviceInfo(cm.DeviceName)
+	cm, err := buildConnectMessage(pkg, session)
 	if err != nil {
 		return nil, err
 	}
@@ -180,8 +168,8 @@ func (h *Handler) connect(session *mqtt.Session) (*ConnectMessage, error) {
 		return nil, err
 	}
 
-	h.broker.Publish(ConnectTopic.String(), cm)
-	return &cm, nil
+	h.broker.Publish(ConnectTopic.String(), *cm)
+	return cm, nil
 }
 
 func (h *Handler) deviceDisconnected(formationID, deviceName string, session *mqtt.Session) {
@@ -192,6 +180,22 @@ func (h *Handler) deviceDisconnected(formationID, deviceName string, session *mq
 	}
 
 	h.broker.Publish(DisconnectTopic.String(), DisconnectMessage{formationID, deviceName})
+}
+
+func buildConnectMessage(pkg *packets.ConnectPacket, session *mqtt.Session) (cm *ConnectMessage, err error) {
+	cm = &ConnectMessage{DeviceName: pkg.ClientIdentifier}
+	if err = json.Unmarshal([]byte(pkg.Username), cm); err != nil {
+		return
+	}
+
+	if len(cm.FormationID) == 0 {
+		return nil, fmt.Errorf("CONNECT packet from %v is missing formation ID. closing connection", session.RemoteAddr())
+	}
+
+	if cm.DeviceInfo, err = fetchDeviceInfo(cm.DeviceName); err != nil {
+		cm = nil
+	}
+	return
 }
 
 func fetchDeviceInfo(deviceName string) (map[string]interface{}, error) {

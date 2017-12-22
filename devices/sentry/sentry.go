@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
+	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/superscale/spire/config"
 	"github.com/superscale/spire/devices"
 	"github.com/superscale/spire/mqtt"
@@ -68,7 +69,7 @@ func (h *Handler) HandleMessage(topic string, message interface{}) error {
 
 		m := new(Message)
 		if err := json.Unmarshal(buf, m); err != nil {
-			return err
+			return bugsnagErrors.New(err, 1)
 		}
 		return h.onMessage(t, m)
 	}
@@ -87,14 +88,17 @@ func (h *Handler) onMessage(t devices.Topic, m *Message) error {
 		"action":     "logged_in",
 	})
 	if err != nil {
-		return err
+		return bugsnagErrors.New(err, 1)
 	}
 
 	_, err = h.dynamoDBClient.PutItem(&dynamodb.PutItemInput{
 		TableName: aws.String(config.Config.SentryDynamoDBTable),
 		Item:      item,
 	})
-	return err
+	if err != nil {
+		return bugsnagErrors.New(err, 1)
+	}
+	return nil
 }
 
 func (h *Handler) getForwardedIP(deviceName string) string {
