@@ -12,6 +12,7 @@ import (
 	"github.com/eclipse/paho.mqtt.golang/packets"
 	"github.com/superscale/spire/config"
 	"github.com/superscale/spire/mqtt"
+	"github.com/superscale/spire/monitoring"
 )
 
 // ConnectTopic ...
@@ -168,6 +169,7 @@ func (h *Handler) connect(session *mqtt.Session) (*ConnectMessage, error) {
 		return nil, err
 	}
 
+	monitoring.AddDeviceClient()
 	h.broker.Publish(ConnectTopic.String(), *cm)
 	return cm, nil
 }
@@ -179,6 +181,7 @@ func (h *Handler) deviceDisconnected(formationID, deviceName string, session *mq
 		log.Println(err)
 	}
 
+	monitoring.RemoveDeviceClient()
 	h.broker.Publish(DisconnectTopic.String(), DisconnectMessage{formationID, deviceName})
 }
 
@@ -199,6 +202,8 @@ func buildConnectMessage(pkg *packets.ConnectPacket, session *mqtt.Session) (cm 
 }
 
 func fetchDeviceInfo(deviceName string) (map[string]interface{}, error) {
+	defer monitoring.StartDeviceInfoSegment(deviceName).End()
+
 	url := fmt.Sprintf("%s/v2/devices/%s", config.Config.LiberatorBaseURL, deviceName)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

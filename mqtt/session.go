@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
+	"github.com/superscale/spire/monitoring"
 )
 
 // Session represents an MQTT connection
@@ -70,13 +71,22 @@ func (s *Session) RemoteAddr() net.Addr {
 }
 
 // Read a packet or time out
-func (s *Session) Read() (p packets.ControlPacket, err error) {
+func (s *Session) Read() (pkg packets.ControlPacket, err error) {
 	s.conn.SetReadDeadline(s.deadline())
-	return packets.ReadPacket(s.conn)
+	pkg, err = packets.ReadPacket(s.conn)
+
+	if p, ok := pkg.(*packets.PublishPacket); ok {
+		monitoring.CountMessageIngress(p.TopicName)
+	}
+	return
 }
 
 // Write a packet or time out
 func (s *Session) Write(pkg packets.ControlPacket) error {
+	if p, ok := pkg.(*packets.PublishPacket); ok {
+		monitoring.CountMessageEgress(p.TopicName)
+	}
+
 	s.conn.SetWriteDeadline(s.deadline())
 	return pkg.Write(s.conn)
 }

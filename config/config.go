@@ -17,6 +17,7 @@ type Params struct {
 	IdleConnectionTimeout time.Duration `env:"SPIRE_IDLE_CONNECTION_TIMEOUT"  envDefault:"30s"`
 	SentryDynamoDBTable   string        `env:"SPIRE_SENTRY_DYNAMODB_TABLE,required"`
 	SlashPrefixTopics     bool          `env:"SPIRE_SLASH_PREFIX_TOPICS"  envDefault:"true"`
+	StatsdAddress         string        `env:"SPIRE_STATSD_ADDRESS"`
 }
 
 // Config is the global handle for accessing runtime configuration

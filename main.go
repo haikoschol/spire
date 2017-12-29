@@ -11,10 +11,16 @@ import (
 	"github.com/superscale/spire/devices/stations"
 	"github.com/superscale/spire/devices/up"
 	"github.com/superscale/spire/mqtt"
+	"github.com/superscale/spire/monitoring"
+	"log"
 )
 
 func main() {
 	config.Parse()
+
+	if err := monitoring.InitMonitoring(config.Config.StatsdAddress); err != nil {
+		log.Fatal(err)
+	}
 
 	broker := mqtt.NewBroker(config.Config.SlashPrefixTopics)
 	formations := devices.NewFormationMap()

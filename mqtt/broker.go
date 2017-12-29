@@ -10,6 +10,7 @@ import (
 	bugsnag "github.com/bugsnag/bugsnag-go"
 	bugsnagErrors "github.com/bugsnag/bugsnag-go/errors"
 	"github.com/eclipse/paho.mqtt.golang/packets"
+	"github.com/superscale/spire/monitoring"
 )
 
 // InternalTopicPrefix Topics with this prefix are reserved for internal use.
@@ -58,6 +59,7 @@ func (b *Broker) HandleConnection(session *Session) {
 		}
 		return
 	}
+	monitoring.AddControlClient()
 
 	for {
 		pkg, err := session.Read()
@@ -228,6 +230,8 @@ func (b *Broker) Publish(topic string, message interface{}) {
 
 // Remove ...
 func (b *Broker) Remove(s Subscriber) {
+	monitoring.RemoveControlClient()
+
 	b.l.Lock()
 	defer b.l.Unlock()
 
